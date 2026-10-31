@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/wait.h>
 
 #include "systemcalls.h"
 
@@ -47,6 +48,7 @@ bool do_exec(int count, ...)
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
+		printf("%s\n", command[i]);
     }
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
@@ -63,21 +65,30 @@ bool do_exec(int count, ...)
  *
 */
     pid_t pid = fork();
-    if (pid == -1)
+    if (pid == -1) {
         perror("fork");
+		return false;
+	}
 
-    if (!pid) {
-	// The child process
-    	int ret = execv(command[0], command[1]);
+    if (pid == 0) {
+		// The child process
+    	int ret = execv(command[0], command);
     	if (ret == -1) {
-	    	perror("Error running execv");
-	    	exit(EXIT_FAILURE);
+			perror("execv");
+			exit(EXIT_FAILURE);
 		}
     }
-	
+
+	int status;
+	pid_t ppid = wait(&status);
+	if (ppid == -1) {
+		perror("wait");
+		return false;
+	}
+
     va_end(args);
 
-    return true;
+    return WEXITSTATUS(status) != EXIT_FAILURE;
 }
 
 /**
@@ -109,25 +120,37 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 	int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT, 0644);
-	if (fd < 0)
+	if (fd < 0) {
 		perror("open");
+		return false;
+	}	
 
 	pid_t pid = fork();
-	if (pid == -1)
+
+	if (pid == -1) {
 		perror("fork");
+		return false;
+	}
 
 	if (!pid) {
 		if (dup2(fd, 1) < 0) {
 			perror("dup2");
 		}
-		int ret = execv(command[0], command[1]);
+		int ret = execv(command[0], command);
 		if (ret == -1) {
 			perror("execev");
 			exit(EXIT_FAILURE);
 		}
 	}
 
+	int status;
+	pid_t ppid = wait(&status);
+    if (ppid == -1) {
+		perror("wait");
+		return false;
+	}
+
     va_end(args);
 
-    return true;
+    return WEXITSTATUS(status) != EXIT_FAILURE;
 }
